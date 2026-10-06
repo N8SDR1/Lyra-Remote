@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lyra Remote</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header>
+    <h1>Lyra Remote</h1>
+    <p>A TCI client for Lyra. The browser-client idea is Brent N9BC’s, from
+      <a href="https://github.com/n9bc/thetis-on-the-web">Thetis on the Web</a>.</p>
+  </header>
+  <main>
+    <section class="panel">
+      <div class="row">
+        <input id="host" type="text" spellcheck="false" value="ws://127.0.0.1:40001" aria-label="Lyra TCI address">
+        <button id="connect" type="button">Connect</button>
+        <span id="status">Disconnected</span>
+      </div>
+      <p id="identity" class="meta">—</p>
+    </section>
+
+    <section class="panel">
+      <p id="vfo" class="vfo">—.———.———</p>
+      <p id="vfo-meta" class="meta">Waiting for Lyra</p>
+      <div class="row">
+        <button id="down" type="button" disabled>−</button>
+        <button id="up" type="button" disabled>+</button>
+        <div id="steps" class="steps"></div>
+      </div>
+      <div id="modes" class="modes"></div>
+      <div id="flags" style="margin-top:14px"></div>
+      <p id="smeter">S —</p>
+      <p id="rx2" hidden></p>
+      <p class="note">Arrow keys tune RX1. Shift makes a ten-times step. This page does not transmit.</p>
+    </section>
+
+    <section class="panel">
+      <div id="log" aria-label="TCI log"></div>
+    </section>
+  </main>
+  <script src="js/tci.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
