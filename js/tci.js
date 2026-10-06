@@ -1,9 +1,9 @@
-/* TCI text client. Lyra sends "command:args;" lines and a few bare words
-   (start, ready). Binary audio and I/Q frames are ignored until a later cut. */
+/* TCI client. Lyra sends "command:args;" lines and a few bare words
+   (start, ready). Binary frames are handed to onBinary. */
 (function () {
   "use strict";
 
-  var MODES = ["LSB", "USB", "AM", "CWU", "CWL", "DIGU", "DIGL", "FM", "SAM", "DSB"];
+  var MODES = ["LSB", "USB", "CW", "CWU", "CWL", "AM", "DIGU", "DIGL", "FM", "SAM", "DSB"];
 
   function blankState() {
     return {
@@ -20,7 +20,12 @@
       sub: false,
       transmitting: false,
       smeter: null,
-      smeterRx2: null
+      smeterRx2: null,
+      filterLo: null,
+      filterHi: null,
+      radioMute: false,
+      dds: null,
+      iqRate: null
     };
   }
 
@@ -30,7 +35,9 @@
     this.onChange = null;
     this.onLog = null;
     this.onStatus = null;
+    this.onBinary = null;
     this._buf = "";
+    this._iqOn = false;
   }
 
   TciClient.MODES = MODES;
@@ -38,30 +45,45 @@
   TciClient.prototype.connect = function (url) {
     this.disconnect();
     var self = this;
+    var opened = false;
     this._status("Connecting");
-    var ws = new WebSocket(url);
+    var ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      this._status("Edge will not open the radio link from a file. Double-click Open Lyra Remote.");
+      return;
+    }
     ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onopen = function () {
+      opened = true;
       self.state.connected = true;
       self._status("Connected");
       self._emit();
     };
     ws.onclose = function () {
+      self._iqOn = false;
       self.state = blankState();
-      self._status("Disconnected");
+      self._status(opened
+        ? "Disconnected"
+        : "Lyra did not answer. In Lyra, Settings → Network, turn TCI server running on (port 40001).");
       self._emit();
       if (self.ws === ws) self.ws = null;
     };
     ws.onerror = function () {
-      self._status("Connection failed");
+      if (!opened) {
+        self._status("Lyra did not answer. In Lyra, Settings → Network, turn TCI server running on (port 40001).");
+      }
     };
     ws.onmessage = function (ev) {
       if (typeof ev.data === "string") self._ingest(ev.data);
+      else if (ev.data instanceof ArrayBuffer && self.onBinary) self.onBinary(ev.data);
     };
   };
 
   TciClient.prototype.disconnect = function () {
+    this.stopIq();
     if (this.ws) {
       this.ws.onclose = null;
       this.ws.close();
@@ -87,6 +109,44 @@
 
   TciClient.prototype.setMode = function (mode) {
     this.send("modulation:0," + mode);
+  };
+
+  TciClient.prototype.setSub = function (on) {
+    this.send("rx_enable:1," + (on ? "true" : "false"));
+  };
+
+  TciClient.prototype.setSplit = function (on) {
+    this.send("split_enable:0," + (on ? "true" : "false"));
+  };
+
+  TciClient.prototype.startAudio = function () {
+    this.send("audio_start:0");
+  };
+
+  TciClient.prototype.stopAudio = function () {
+    this.send("audio_stop:0");
+  };
+
+  TciClient.prototype.setFilterWidth = function (hz) {
+    var n = Math.round(Number(hz));
+    if (!isFinite(n) || n <= 0) return;
+    this.send("rx_filter_band:0,0," + n);
+  };
+
+  TciClient.prototype.setRadioMute = function (on) {
+    this.send("rx_mute:0," + (on ? "true" : "false"));
+  };
+
+  TciClient.prototype.startIq = function () {
+    if (this._iqOn) return;
+    this._iqOn = true;
+    this.send("iq_start:0");
+  };
+
+  TciClient.prototype.stopIq = function () {
+    if (!this._iqOn) return;
+    this._iqOn = false;
+    this.send("iq_stop:0");
   };
 
   TciClient.prototype._ingest = function (chunk) {
@@ -135,6 +195,17 @@
       var dbm = num(args[2]);
       if (args[0] === "0") s.smeter = dbm;
       else if (args[0] === "1") s.smeterRx2 = dbm;
+    } else if (cmd === "dds" && args[0] === "0") {
+      s.dds = num(args[1]);
+    } else if (cmd === "iq_samplerate") {
+      s.iqRate = num(args[0]);
+    } else if (cmd === "rx_filter_band" && args[0] === "0") {
+      s.filterLo = num(args[1]);
+      s.filterHi = num(args[2]);
+    } else if (cmd === "mute") {
+      s.radioMute = truth(args[0]);
+    } else if (cmd === "rx_mute" && args[0] === "0") {
+      s.radioMute = truth(args[1]);
     } else {
       return;
     }
